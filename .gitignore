@@ -1,0 +1,24 @@
+# Visual Studio
+.vs/
+.vscode/
+
+# Build folders
+bin/
+obj/
+
+# User files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# SQL Server database files
+*.mdf
+*.ldf
+*.bak
+
+# Logs
+*.log
+
+# Node
+node_modules/

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NBE Smart ATM Locator</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.44.0/iconfont/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="navbar">
+  <div class="navbar-left">
+    <div class="logo-badge">NBE</div>
+    <div>
+      <div class="navbar-title">Smart ATM Locator</div>
+      <div class="navbar-sub">Find your nearest ATM quickly and easily</div>
+    </div>
+  </div>
+  <div class="navbar-right">
+    <div class="avatar">YS</div>
+  </div>
+</div>
+
+<div class="home-layout">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="search-box">
+        <i class="ti ti-search"></i>
+        <input type="text" id="search-input" placeholder="ابحث باسم المنطقة، الشارع، أو الفرع..." oninput="renderList()">
+      </div>
+      <div class="chip-row" id="filter-chips"></div>
+      <div id="locate-status"></div>
+    </div>
+    <div class="list-scroll" id="atm-list"></div>
+  </div>
+  <div class="map-area">
+    <div id="map"></div>
+    <div class="map-legend">
+      <span><div class="dot" style="background:var(--ok-dot)"></div>متاحة وتعمل بانتظام</span>
+      <span><div class="dot" style="background:var(--warn-dot)"></div>مزدحمة / رصيد نقدي منخفض</span>
+      <span><div class="dot" style="background:var(--err-dot)"></div>خارج الخدمة</span>
+    </div>
+  </div>
+</div>
+
+<!-- Details Drawer -->
+<div id="drawer-overlay" class="drawer-overlay" onclick="closeDrawer()"></div>
+<div id="drawer" class="drawer">
+  <div class="drawer-head">
+    <div>
+      <div style="font-size:18px; font-weight:700;" id="drawer-name">-</div>
+      <div style="font-size:13.5px; color:var(--text-secondary); margin-top:4px;" id="drawer-address">-</div>
+    </div>
+    <button class="drawer-close" onclick="closeDrawer()"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="drawer-body">
+    <div class="drawer-section">
+      <h4>الحالة</h4>
+      <div id="drawer-status"></div>
+    </div>
+    <div class="drawer-section">
+      <h4>الخدمات المتاحة</h4>
+      <div id="drawer-services"></div>
+    </div>
+    <div class="drawer-section">
+      <h4>فئات العملة المتاحة للسحب</h4>
+      <div id="drawer-denoms"></div>
+    </div>
+    <div class="drawer-section">
+      <h4>مستوى الازدحام</h4>
+      <div id="drawer-crowd-badge" style="margin-bottom:8px;"></div>
+      <div id="drawer-crowd" style="font-size:13.5px; color:var(--text-secondary); line-height:1.5;"></div>
+    </div>
+  </div>
+  <div class="drawer-footer" style="display:flex; flex-direction:column; gap:12px;">
+    <a id="drawer-directions" class="btn-primary" href="#" target="_blank" style="text-decoration:none;"><i class="ti ti-navigation"></i> احصل على الاتجاهات</a>
+    <button class="btn-primary" style="background:#fff; color:var(--err-text,#C5221F); border:2px solid var(--border); box-shadow:none;" onclick="openReportModal()"><i class="ti ti-flag"></i> الإبلاغ عن عطل في الماكينة</button>
+    <div id="report-confirm" style="display:none; font-size:13.5px; font-weight:700; color:var(--ok-text); text-align:center; margin-top:4px;"><i class="ti ti-check" style="vertical-align:-2px;"></i> تم إرسال البلاغ، شكراً لك</div>
+  </div>
+</div>
+
+<!-- Report Issue Modal -->
+<div id="report-modal-overlay" class="modal-overlay" onclick="if(event.target===this) closeReportModal()">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3>الإبلاغ عن عطل في الماكينة</h3>
+      <button class="modal-close" onclick="closeReportModal()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section">
+        <h4>نوع المشكلة</h4>
+        <select class="text-field-input" id="report-category-select" onchange="onCategoryChange()">
+          <option value="" selected disabled>اختر نوع المشكلة</option>
+        </select>
+        <div class="field-error" id="category-error">يُرجى اختيار نوع المشكلة</div>
+      </div>
+      <div class="modal-section">
+        <h4>وصف المشكلة</h4>
+        <textarea class="modal-textarea" id="report-description" placeholder="يُرجى كتابة تفاصيل المشكلة التي واجهتك..."></textarea>
+        <div class="field-error" id="description-error">يُرجى كتابة وصف مختصر للمشكلة</div>
+      </div>
+      <div class="modal-section" style="margin-bottom:0;">
+        <h4>الرقم القومي</h4>
+        <input type="text" inputmode="numeric" maxlength="14" class="text-field-input" id="national-id" placeholder="أدخل الرقم القومي المكوّن من 14 رقم">
+        <div class="field-error" id="national-id-error">الرقم القومي غير صحيح، تأكد من كتابته بشكل صحيح</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeReportModal()">إلغاء</button>
+      <button class="btn-primary" style="flex:1;" onclick="submitReport()"><i class="ti ti-send"></i> إرسال البلاغ</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
