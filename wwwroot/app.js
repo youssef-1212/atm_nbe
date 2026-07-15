@@ -1,34 +1,36 @@
-﻿/* ================= DATA ================= */
-const ATMS = [
-  {id:1, name:"فرع مصر الجديدة", type:"branch", address:"شارع الثورة، مصر الجديدة", lat:30.0875, lng:31.3244, status:"ok", cash:82, services:["withdraw","deposit","transfer"], denoms:[200,100,50,20], tx15:3},
-  {id:2, name:"ماكينة عباس العقاد", type:"atm", address:"أمام سيتي ستارز، مدينة نصر", lat:30.0731, lng:31.3467, status:"warn", cash:35, services:["withdraw"], denoms:[100,50], tx15:19},
-  {id:3, name:"ماكينة ميدان روكسي", type:"atm", address:"ميدان روكسي، مصر الجديدة", lat:30.0916, lng:31.3436, status:"err", cash:0, services:[], denoms:[], tx15:0},
-  {id:4, name:"فرع مدينة نصر", type:"branch", address:"شارع مكرم عبيد، مدينة نصر", lat:30.0645, lng:31.3389, status:"ok", cash:91, services:["withdraw","deposit","transfer"], denoms:[200,100,50,20,10], tx15:9},
-  {id:5, name:"ماكينة الحي العاشر", type:"atm", address:"الحي العاشر، مدينة نصر", lat:30.0554, lng:31.3466, status:"ok", cash:64, services:["withdraw","deposit"], denoms:[200,100,50], tx15:0},
-  {id:6, name:"ماكينة كورنيش النيل", type:"atm", address:"كورنيش النيل، ماسبيرو", lat:30.0511, lng:31.2408, status:"warn", cash:22, services:["withdraw"], denoms:[100], tx15:22},
-];
+/* ================= DATA ================= */
+let ATMS = [];
 
-/* مستوى الازدحام يُشتق من إشارة حية — هنا: عدد العمليات المنفَّذة خلال
-   آخر 15 دقيقة على الماكينة. في بيئة الإنتاج تُستمد هذه البيانات من
-   سجلّات نظام المراقبة الفعلي وليس من بيانات ثابتة كما هو الحال هنا.
-   عدم تسجيل أي عملية خلال آخر دقائق يُعدّ مؤشراً على الازدحام، إذ يدل
-   على تعطّل تدفّق المعاملات رغم استمرار عمل الماكينة. */
-function crowdInfo(a){
-  const n = a.tx15;
-  if(a.status==='err') return {label:"غير متاحة", note:"الماكينة خارج الخدمة حالياً", level:"err"};
-  if(n === 0) return {label:"مرتفعة", note:"لم تُسجَّل أي عملية خلال آخر 15 دقيقة، ما قد يشير إلى ازدحام على الماكينة", level:"err"};
-  if(n <= 10) return {label:"منخفضة", note:`سُجِّلت ${n} عمليات خلال آخر 15 دقيقة، وتعمل الماكينة بانتظام`, level:"ok"};
-  return {label:"متوسطة", note:`سُجِّلت ${n} عملية خلال آخر 15 دقيقة`, level:"warn"};
+async function fetchATMs() {
+  try {
+    const response = await fetch('/api/Atms');
+    ATMS = await response.json();
+  } catch (error) {
+    console.error("خطأ أثناء جلب بيانات أجهزة الصراف الآلي:", error);
+  }
 }
 
-const STATUS_LABEL = {ok:"متاحة", warn:"مزدحمة / رصيد نقدي منخفض", err:"خارج الخدمة"};
+/* مستوى الازدحام يُشتق من إشارة حية — هنا: عدد العمليات المنفَّذة خلال
+   آخر 15 دقيقة على جهاز الصراف الآلي. في بيئة الإنتاج تُستمد هذه البيانات من
+   سجلّات نظام المراقبة الفعلي وليس من بيانات ثابتة كما هو الحال هنا.
+   عدم تسجيل أي عملية خلال آخر دقائق يُعدّ مؤشراً على الازدحام، إذ يدل
+   على تعطّل تدفّق المعاملات رغم استمرار عمل جهاز الصراف الآلي. */
+function crowdInfo(a){
+  const n = a.tx15;
+  if(a.status==='err') return {label:"غير متاح", note:"جهاز الصراف الآلي خارج الخدمة حالياً", level:"err"};
+  if(n === 0) return {label:"مرتفع", note:"لم تُسجَّل أي عملية خلال آخر 15 دقيقة، مما قد يشير إلى وجود ازدحام على جهاز الصراف الآلي", level:"err"};
+  if(n <= 10) return {label:"منخفض", note:`سُجِّلت ${n} عمليات خلال آخر 15 دقيقة، ويعمل جهاز الصراف الآلي بانتظام`, level:"ok"};
+  return {label:"متوسط", note:`سُجِّلت ${n} عملية خلال آخر 15 دقيقة`, level:"warn"};
+}
+
+const STATUS_LABEL = {ok:"متاح", warn:"مزدحم / رصيد نقدي منخفض", err:"خارج الخدمة"};
 const STATUS_CLASS = {ok:"status-ok", warn:"status-warn", err:"status-err"};
-const SERVICE_LABEL = {withdraw:"سحب نقدي", deposit:"إيداع", transfer:"تحويل أموال"};
+const SERVICE_LABEL = {withdraw:"سحب نقدي", deposit:"إيداع نقدي", transfer:"تحويل أموال"};
 const SERVICE_ICON  = {withdraw:"ti-cash", deposit:"ti-arrow-down-circle", transfer:"ti-arrows-exchange"};
 
 let selectedServices = new Set();
 let userLocation = null;
-let map, adminMap;
+let map;
 let markers = [];
 
 function haversine(lat1, lng1, lat2, lng2){
@@ -46,7 +48,7 @@ function setLocationCard(state, html){
 }
 
 function useMyLocation(){
-  setLocationCard('loading', '<i class="ti ti-loader-2"></i> جارٍ تحديد موقعك...');
+  setLocationCard('loading', '<i class="ti ti-loader-2"></i> جارٍ تحديد موقعكم...');
   if(!navigator.geolocation || !window.isSecureContext){
     locateByIP('تحديد الموقع الدقيق غير متاح هنا (يتطلب اتصالاً آمناً HTTPS)');
     return;
@@ -54,12 +56,12 @@ function useMyLocation(){
   navigator.geolocation.getCurrentPosition(
     pos=>{
       setUserLocation(pos.coords.latitude, pos.coords.longitude);
-      setLocationCard('ok', '<i class="ti ti-map-pin-check"></i> تم تحديد موقعك — الماكينات مرتبة حسب الأقرب');
+      setLocationCard('ok', '<i class="ti ti-map-pin-check"></i> تم تحديد موقعكم — أجهزة الصراف الآلي مرتبة حسب الأقرب');
     },
     err=>{
       let reason = 'حدث خطأ غير متوقع';
       if(err.code === err.PERMISSION_DENIED) reason = 'تم رفض إذن الوصول للموقع';
-      else if(err.code === err.POSITION_UNAVAILABLE) reason = 'تعذر تحديد موقعك بدقة';
+      else if(err.code === err.POSITION_UNAVAILABLE) reason = 'تعذر تحديد موقعكم بدقة';
       else if(err.code === err.TIMEOUT) reason = 'انتهت مهلة تحديد الموقع';
       locateByIP(reason);
     },
@@ -71,31 +73,31 @@ function useMyLocation(){
    إذناً من المتصفح) كبديل عندما يتعذر تحديد الموقع الدقيق عبر GPS. وإذا
    فشلت هذه المحاولة أيضاً، يُقترح على المستخدم النقر على الخريطة يدوياً. */
 function locateByIP(reason){
-  setLocationCard('loading', `<i class="ti ti-loader-2"></i> ${reason} — جارٍ تحديد موقعك تقريبياً...`);
+  setLocationCard('loading', `<i class="ti ti-loader-2"></i> ${reason} — جارٍ تحديد موقعكم تقريبياً...`);
   fetch('https://ipapi.co/json/')
     .then(r=>r.json())
     .then(data=>{
       if(data && data.latitude && data.longitude){
         setUserLocation(data.latitude, data.longitude);
-        setLocationCard('approx', `<i class="ti ti-map-pin-cog"></i> تم تحديد موقعك تقريبياً${data.city ? ' ('+data.city+')' : ''} — <a onclick="useMyLocation()">إعادة المحاولة بدقة</a> أو انقر على الخريطة لتعديله`);
+        setLocationCard('approx', `<i class="ti ti-map-pin-cog"></i> تم تحديد موقعكم بشكل تقريبي${data.city ? ' ('+data.city+')' : ''} — <a onclick="useMyLocation()">إعادة المحاولة بدقة</a> أو انقروا على الخريطة لتعديله`);
       } else {
-        setLocationCard('err', `<i class="ti ti-map-pin-off"></i> ${reason} — انقر على أي نقطة في الخريطة لتحديد موقعك`);
+        setLocationCard('err', `<i class="ti ti-map-pin-off"></i> ${reason} — انقروا على أي نقطة في الخريطة لتحديد موقعكم`);
       }
     })
     .catch(()=>{
-      setLocationCard('err', `<i class="ti ti-map-pin-off"></i> ${reason} — انقر على أي نقطة في الخريطة لتحديد موقعك`);
+      setLocationCard('err', `<i class="ti ti-map-pin-off"></i> ${reason} — انقروا على أي نقطة في الخريطة لتحديد موقعكم`);
     });
 }
 
-/* تحديد الموقع يدوياً (بديل لما إذن المتصفح مرفوض أو الصفحة متفتحة
-   من غير HTTPS، وهي حالات بيتوقف فيها الـ Geolocation API عن الشغل) */
+/* تحديد الموقع يدوياً (كبديل عند رفض إذن المتصفح أو فتح الصفحة بدون
+   بروتوكول HTTPS الآمن، وهي الحالات التي يتوقف فيها محدد المواقع عن العمل) */
 function setUserLocation(lat, lng){
   userLocation = {lat, lng};
   if(map){
     if(window._userMarker) map.removeLayer(window._userMarker);
     window._userMarker = L.circleMarker([lat, lng], {
       radius:8, color:'#fff', weight:2, fillColor:'#107614', fillOpacity:1
-    }).addTo(map).bindTooltip('موقعك الحالي');
+    }).addTo(map).bindTooltip('موقعكم الحالي');
     map.setView([lat, lng], 13);
   }
   renderList();
@@ -104,9 +106,9 @@ function setUserLocation(lat, lng){
 /* ================= CUSTOMER: LIST + MAP ================= */
 function renderChips(){
   const chips = [
-    {key:"withdraw", label:"سحب"},
-    {key:"deposit", label:"إيداع"},
-    {key:"transfer", label:"تحويل"},
+    {key:"withdraw", label:"سحب نقدي"},
+    {key:"deposit", label:"إيداع نقدي"},
+    {key:"transfer", label:"تحويل أموال"},
   ];
   document.getElementById('filter-chips').innerHTML = chips.map(c=>
     `<button class="chip ${selectedServices.has(c.key)?'selected':''}" onclick="toggleFilter('${c.key}')">${c.label}</button>`
@@ -143,7 +145,7 @@ function renderList(){
         <span class="status-badge ${STATUS_CLASS[a.status]}"><span class="dot"></span>${STATUS_LABEL[a.status]}</span>
       </div>
       <div class="atm-services">
-        ${a.services.map(s=>`<span><i class="ti ${SERVICE_ICON[s]}"></i>${SERVICE_LABEL[s]}</span>`).join('') || '<span>لا توجد خدمات متاحة حالياً</span>'}
+        ${a.services.map(s=>`<span><i class="ti ${SERVICE_ICON[s]}"></i>${SERVICE_LABEL[s]}</span>`).join('') || '<span>لا تتوفر خدمات حالياً</span>'}
       </div>
     </div>
   `).join('');
@@ -153,15 +155,15 @@ function renderList(){
   }
 }
 
-/* عند عدم وجود نتائج مطابقة للفلاتر، تُعرض في الجزء الفارغ من الشاشة
-   أقرب ماكينة أو فرع لموقع العميل بدلاً من ترك المساحة فارغة دون فائدة. */
+/* عند عدم وجود نتائج مطابقة للتصفية، يُعرض في الجزء الفارغ من الشاشة
+   أقرب صراف آلي أو فرع لموقع العميل بدلاً من ترك المساحة فارغة. */
 function renderEmptyStateWithNearest(){
   if(!userLocation){
     return `
       <div style="text-align:center; color:var(--text-muted); font-size:13px; padding:30px 10px 14px;">لا توجد نتائج مطابقة</div>
       <div style="text-align:center; padding:0 10px 30px;">
         <button class="btn-primary" style="width:auto; padding:9px 18px; display:inline-flex;" onclick="useMyLocation()">
-          <i class="ti ti-current-location"></i> اعرض أقرب ماكينة لموقعي
+          <i class="ti ti-current-location"></i> عرض أقرب صراف آلي لموقعي
         </button>
       </div>`;
   }
@@ -171,7 +173,7 @@ function renderEmptyStateWithNearest(){
     .sort((x,y)=>x.dist-y.dist)[0];
   if(!nearest) return `<div style="text-align:center; color:var(--text-muted); font-size:13px; padding:40px 10px;">لا توجد نتائج مطابقة</div>`;
   return `
-    <div style="text-align:center; color:var(--text-muted); font-size:12.5px; padding:18px 10px 8px;">لا توجد نتائج مطابقة للفلاتر، لكن أقرب ماكينة لموقعك هي:</div>
+    <div style="text-align:center; color:var(--text-muted); font-size:12.5px; padding:18px 10px 8px;">لا توجد نتائج مطابقة للتصفية، ولكن أقرب صراف آلي لموقعكم هو:</div>
     <div class="atm-card" onclick="openDrawer(${nearest.id})">
       <div class="atm-card-top">
         <div>
@@ -181,7 +183,7 @@ function renderEmptyStateWithNearest(){
         <span class="status-badge ${STATUS_CLASS[nearest.status]}"><span class="dot"></span>${STATUS_LABEL[nearest.status]}</span>
       </div>
       <div class="atm-services">
-        ${nearest.services.map(s=>`<span><i class="ti ${SERVICE_ICON[s]}"></i>${SERVICE_LABEL[s]}</span>`).join('') || '<span>لا توجد خدمات متاحة حالياً</span>'}
+        ${nearest.services.map(s=>`<span><i class="ti ${SERVICE_ICON[s]}"></i>${SERVICE_LABEL[s]}</span>`).join('') || '<span>لا تتوفر خدمات حالياً</span>'}
       </div>
     </div>`;
 }
@@ -201,7 +203,7 @@ function initMap(){
   });
   map.on('click', e=>{
     setUserLocation(e.latlng.lat, e.latlng.lng);
-    setLocationCard('ok', '<i class="ti ti-map-pin-check"></i> تم تحديد موقعك من الخريطة — الماكينات مرتبة حسب الأقرب');
+    setLocationCard('ok', '<i class="ti ti-map-pin-check"></i> تم تحديد موقعكم من الخريطة — أجهزة الصراف الآلي مرتبة حسب الأقرب');
   });
 }
 
@@ -217,10 +219,10 @@ function openDrawer(id){
     `<span class="status-badge ${STATUS_CLASS[a.status]}"><span class="dot"></span>${STATUS_LABEL[a.status]}</span>`;
   document.getElementById('drawer-services').innerHTML = a.services.length
     ? a.services.map(s=>`<div class="service-row"><i class="ti ${SERVICE_ICON[s]}"></i>${SERVICE_LABEL[s]}</div>`).join('')
-    : `<div class="service-row" style="color:var(--text-muted)">لا توجد خدمات متاحة حالياً</div>`;
+    : `<div class="service-row" style="color:var(--text-muted)">لا تتوفر خدمات حالياً</div>`;
   document.getElementById('drawer-denoms').innerHTML = a.denoms && a.denoms.length
     ? `<div style="display:flex; flex-wrap:wrap; gap:6px;">${a.denoms.map(d=>`<span style="font-size:12.5px; padding:5px 10px; border:1px solid var(--border); border-radius:8px; color:var(--text);">${d} جنيه</span>`).join('')}</div>`
-    : `<div style="font-size:12.5px; color:var(--text-muted)">لا تتوفر بيانات فئات حالياً</div>`;
+    : `<div style="font-size:12.5px; color:var(--text-muted)">لا تتوفر بيانات الفئات حالياً</div>`;
   document.getElementById('drawer-crowd-badge').innerHTML =
     `<span class="status-badge ${STATUS_CLASS[crowd.level]}"><span class="dot"></span>${crowd.label}</span>`;
   document.getElementById('drawer-crowd').textContent = crowd.note;
@@ -232,21 +234,15 @@ function openDrawer(id){
 
 /* ================= REPORT ISSUE MODAL ================= */
 const REPORT_CATEGORIES = [
-  {id:"power",  label:"انقطاع التيار الكهربائي عن الماكينة"},
-  {id:"cash",   label:"نفاد الرصيد النقدي من الماكينة"},
-  {id:"card",   label:"احتجاز البطاقة داخل الماكينة"},
+  {id:"power",  label:"انقطاع التيار الكهربائي عن جهاز الصراف الآلي"},
+  {id:"cash",   label:"نفاد الرصيد النقدي من جهاز الصراف الآلي"},
+  {id:"card",   label:"احتجاز البطاقة داخل جهاز الصراف الآلي"},
   {id:"screen", label:"عطل في الشاشة أو لوحة المفاتيح"},
   {id:"other",  label:"مشكلة أخرى"},
 ];
 
 let selectedCategory = null;
 
-/* Structural validation of an Egyptian National ID (14 digits):
-   digit 1: century (2=1900s, 3=2000s), digits 2-3: year, 4-5: month,
-   6-7: day, 8-9: governorate code (01-88). This checks shape/validity
-   of the number, not whether it belongs to a real person. Used instead
-   of a captcha so a complaint is tied to an identifiable person and
-   can't be spammed anonymously. */
 function isValidNationalId(id){
   if(!/^\d{14}$/.test(id)) return false;
   const century = id[0];
@@ -314,33 +310,121 @@ function submitReport(){
 
   if(!valid) return;
 
-  const a = ATMS.find(x=>x.id===currentDrawerId);
-  a.reported = true;
-  a.reportedAt = new Date();
-  a.reportCategory = selectedCategory;
-  a.reportDescription = description;
-  a.reportNationalId = nationalId;
+  const reportPayload = {
+    AtmId: currentDrawerId,
+    Category: selectedCategory,
+    Description: description,
+    NationalId: nationalId
+  };
 
-  closeReportModal();
-  document.getElementById('report-confirm').style.display = 'block';
+  fetch('/api/Atms/report', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(reportPayload)
+  })
+  .then(res => {
+    if (!res.ok) throw new Error('Failed to submit report');
+    return res.json();
+  })
+  .then(() => {
+    const a = ATMS.find(x=>x.id===currentDrawerId);
+    a.reported = true;
+    a.reportedAt = new Date();
+    a.reportCategory = selectedCategory;
+    a.reportDescription = description;
+    a.reportNationalId = nationalId;
+
+    closeReportModal();
+    document.getElementById('report-confirm').style.display = 'block';
+  })
+  .catch(err => {
+    console.error(err);
+    alert('حدث خطأ أثناء إرسال البلاغ. يرجى المحاولة مرة أخرى.');
+  });
 }
+
 function closeDrawer(){
   document.getElementById('drawer-overlay').classList.remove('open');
   document.getElementById('drawer').classList.remove('open');
 }
 
-/* ================= INIT ================= */
-renderChips();
-renderList();
-setLocationCard('loading', '<i class="ti ti-loader-2"></i> جارٍ تحديد موقعك...');
+let routePolyline = null;
+let routeAtmMarker = null;
 
-/* يُؤجَّل تهيئة الخريطة قليلاً إلى أن ينتهي المتصفح من حساب أبعاد الصفحة،
-   لأن Leaflet إذا تمت تهيئته والعنصر (div) الخاص به لا يزال بأبعاد صفر
-   (قبل أول رسم للصفحة) تبقى الخريطة فارغة تماماً دون بلاطات ولا حتى نقاط الماكينات.
-   كل خطوة هنا معزولة بـ try/catch: فإذا فشل تحميل مكتبة الخرائط (من CDN)
-   لأي سبب (انقطاع الإنترنت، حظر الشبكة، إلخ) يظل الباقي (القائمة، الفلاتر،
-   تحديد الموقع) يعمل بشكل طبيعي بدلاً من توقف الصفحة بالكامل. */
-window.addEventListener('load', ()=>{
+async function findAtmOnRoute() {
+  const destInput = document.getElementById('destination-input').value.trim();
+  if (!destInput) {
+    alert("يرجى إدخال وجهتكم أولاً.");
+    return;
+  }
+  if (!userLocation) {
+    alert("يرجى تحديد موقعكم الحالي أو النقر على الخريطة لحساب المسار.");
+    return;
+  }
+
+  const origin = `${userLocation.lat},${userLocation.lng}`;
+  
+  try {
+    setLocationCard('loading', '<i class="ti ti-loader-2"></i> جارٍ حساب المسار وأقرب صراف آلي...');
+    const res = await fetch(`/api/Atms/route-atm?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destInput)}`);
+    if (!res.ok) throw new Error('تعذر العثور على مسار.');
+    
+    const data = await res.json();
+    
+    clearRoute(false);
+    
+    if (map && data.route && data.route.length > 0) {
+      routePolyline = L.polyline(data.route, {color: '#107614', weight: 5, opacity: 0.7}).addTo(map);
+      map.fitBounds(routePolyline.getBounds());
+    }
+    
+    if (data.nearestAtm) {
+      setLocationCard('ok', `<i class="ti ti-map-pin-check"></i> أقرب صراف آلي على المسار هو: <b>${data.nearestAtm.name}</b> (على بعد ${data.distanceToRouteKm.toFixed(2)} كم من المسار)`);
+      
+      openDrawer(data.nearestAtm.id);
+      
+      if (map) {
+        routeAtmMarker = L.circleMarker([data.nearestAtm.lat, data.nearestAtm.lng], {
+          radius: 14, color: '#FAB40C', weight: 4, fillColor: '#639922', fillOpacity: 0.9
+        }).addTo(map).bindTooltip("أقرب صراف آلي على مساركم").openTooltip();
+      }
+    } else {
+      setLocationCard('approx', '<i class="ti ti-info-circle"></i> تم العثور على المسار ولكن لا توجد أجهزة صراف آلي قريبة منه.');
+    }
+    
+    document.getElementById('clear-route-btn').style.display = 'block';
+  } catch (error) {
+    console.error(error);
+    setLocationCard('err', '<i class="ti ti-map-pin-off"></i> فشل حساب المسار. يرجى التحقق من إدخال وجهة صحيحة.');
+  }
+}
+
+function clearRoute(resetCard = true) {
+  if (map) {
+    if (routePolyline) {
+      map.removeLayer(routePolyline);
+      routePolyline = null;
+    }
+    if (routeAtmMarker) {
+      map.removeLayer(routeAtmMarker);
+      routeAtmMarker = null;
+    }
+  }
+  document.getElementById('clear-route-btn').style.display = 'none';
+  if (resetCard) {
+    setLocationCard('ok', '<i class="ti ti-map-pin-check"></i> تم تحديد موقعكم — أجهزة الصراف الآلي مرتبة حسب الأقرب');
+  }
+}
+
+/* ================= INIT ================= */
+async function initApp() {
+  await fetchATMs();
+  renderChips();
+  renderList();
+  setLocationCard('loading', '<i class="ti ti-loader-2"></i> جارٍ تحديد موقعكم...');
+
   setTimeout(()=>{
     try{
       if(typeof L === 'undefined') throw new Error('Leaflet library failed to load');
@@ -349,7 +433,7 @@ window.addEventListener('load', ()=>{
     }catch(e){
       console.error('Map init failed:', e);
       const mapEl = document.getElementById('map');
-      if(mapEl) mapEl.innerHTML = `<div style="display:flex; align-items:center; justify-content:center; height:100%; text-align:center; color:var(--text-muted); font-size:13px; padding:20px;">تعذر تحميل الخريطة (يُرجى التأكد من اتصال الإنترنت) — إلا أن القائمة والبحث يعملان بشكل طبيعي</div>`;
+      if(mapEl) mapEl.innerHTML = `<div style="display:flex; align-items:center; justify-content:center; height:100%; text-align:center; color:var(--text-muted); font-size:13px; padding:20px;">تعذر تحميل الخريطة (يرجى التحقق من الاتصال بالإنترنت) — ومع ذلك فإن القائمة والبحث يعملان بشكل طبيعي</div>`;
     }
     try{
       useMyLocation();
@@ -358,4 +442,6 @@ window.addEventListener('load', ()=>{
       setLocationCard('err', '<i class="ti ti-map-pin-off"></i> تعذر تحديد الموقع');
     }
   }, 50);
-});
+}
+
+window.addEventListener('load', initApp);
