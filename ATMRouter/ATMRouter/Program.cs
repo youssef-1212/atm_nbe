@@ -1,21 +1,46 @@
-using System;
-using System.Linq;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.EntityFrameworkCore;
 using ATMRouter.Models;
 
-Console.WriteLine("Connecting to the database...");
+var builder = WebApplication.CreateBuilder(Environment.GetCommandLineArgs());
 
-try
+// Add services to the container.
+builder.Services.AddControllers();
+// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+// Configure Entity Framework Core with SQL Server
+builder.Services.AddDbContext<AtmrouterContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Configure CORS to allow any origin for development purposes
+builder.Services.AddCors(options =>
 {
-    using var context = new AtmrouterContext();
-    
-    // Test the connection by counting the ATMs
-    var atmCount = context.Atms.Count();
-    
-    Console.WriteLine("✅ Database connection successful!");
-    Console.WriteLine($"There are {atmCount} ATMs in the database.");
-}
-catch (Exception ex)
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
 {
-    Console.WriteLine("❌ Database connection failed:");
-    Console.WriteLine(ex.Message);
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
+
+app.UseCors("AllowAll");
+
+app.UseAuthorization();
+
+app.MapControllers();
+
+app.Run();
